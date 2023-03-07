@@ -17,6 +17,7 @@ import inspect
 import os
 import warnings
 from contextlib import contextmanager
+from typing import Optional
 
 import torch
 from accelerate import dispatch_model, infer_auto_device_map
@@ -573,17 +574,17 @@ class PeftModelForCausalLM(PeftModel):
             inputs_embeds = torch.cat((prompts, inputs_embeds), dim=1)
             return self.base_model(inputs_embeds=inputs_embeds, **kwargs)
 
-    def generate(self, **kwargs):
+    def generate(self, input_ids: Optional[torch.Tensor]=None, **kwargs):
         if not isinstance(self.peft_config, PromptLearningConfig):
-            return self.base_model.generate(**kwargs)
+            return self.base_model.generate(input_ids=input_ids, **kwargs)
         else:
-            if "input_ids" not in kwargs:
+            if input_ids is None:
                 raise ValueError("input_ids must be provided for Peft model generation")
             if kwargs.get("attention_mask", None) is not None:
                 # concat prompt attention mask
                 prefix_attention_mask = torch.ones(
-                    kwargs["input_ids"].shape[0], self.peft_config.num_virtual_tokens
-                ).to(kwargs["input_ids"].device)
+                    input_ids.shape[0], self.peft_config.num_virtual_tokens
+                ).to(input_ids.device)
                 kwargs["attention_mask"] = torch.cat((prefix_attention_mask, kwargs["attention_mask"]), dim=1)
 
             if kwargs.get("position_ids", None) is not None:
@@ -595,7 +596,7 @@ class PeftModelForCausalLM(PeftModel):
                 )
                 kwargs["token_type_ids"] = None
 
-            return self.base_model.generate(**kwargs)
+            return self.base_model.generate(input_ids=input_ids, **kwargs)
 
     def prepare_inputs_for_generation(self, *args, **kwargs):
         model_kwargs = self.base_model_prepare_inputs_for_generation(*args, **kwargs)
@@ -736,11 +737,11 @@ class PeftModelForSeq2SeqLM(PeftModel):
                 return self.base_model(inputs_embeds=inputs_embeds, decoder_inputs_embeds=decoder_inputs_embeds, **kwargs)
 
 
-    def generate(self, **kwargs):
+    def generate(self, input_ids: Optional[torch.Tensor]=None, **kwargs):
         if not isinstance(self.peft_config, PromptLearningConfig):
-            return self.base_model.generate(**kwargs)
+            return self.base_model.generate(input_ids=input_ids, **kwargs)
         else:
-            if "input_ids" not in kwargs:
+            if input_ids is None:
                 raise ValueError("input_ids must be provided for Peft model generation")
             if kwargs.get("position_ids", None) is not None:
                 warnings.warn("Position ids are not supported for parameter efficient tuning. Ignoring position ids.")
@@ -752,7 +753,7 @@ class PeftModelForSeq2SeqLM(PeftModel):
                 kwargs["token_type_ids"] = None
 
             if self.peft_config.peft_type == PeftType.PREFIX_TUNING:
-                return self.base_model.generate(**kwargs)
+                return self.base_model.generate(input_ids=input_ids, **kwargs)
             else:
                 raise NotImplementedError
 
